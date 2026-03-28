@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Sach.in — Your Link Universe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-top">
+    <div class="logo">
+      <div class="logo-icon">🔗</div>
+      <div>
+        <span class="logo-text">Sach.in</span>
+        <span class="logo-dot"> links</span>
+      </div>
+    </div>
+    <div class="header-stats"><span id="link-count">0</span> saved</div>
+  </div>
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input class="search-input" id="search-input" type="search" placeholder="Search your links…" autocomplete="off">
+    <button class="clear-search" id="clear-search">✕</button>
+  </div>
+</header>
+
+<!-- Main -->
+<main>
+
+  <!-- Add URL -->
+  <div class="add-section">
+    <div class="add-label">Save a Link</div>
+    <div class="url-input-wrap">
+      <input class="url-input" id="url-input" type="url"
+        placeholder="Paste any URL here…"
+        autocomplete="off" autocorrect="off"
+        autocapitalize="none" spellcheck="false">
+      <button class="add-btn" id="add-btn">Save</button>
+    </div>
+  </div>
+
+  <!-- Loading indicator -->
+  <div class="loading-card" id="loading-card">
+    <div class="loader-spinner"></div>
+    <div class="loading-text">
+      Fetching details…
+      <strong id="loading-url"></strong>
+    </div>
+  </div>
+
+  <!-- Section header & filters -->
+  <div class="section-header">
+    <div class="section-title" id="section-label">All Links</div>
+  </div>
+  <div class="filter-tabs" id="filter-tabs">
+    <button class="filter-tab active" data-filter="all">All</button>
+    <button class="filter-tab" data-filter="recent">Recent</button>
+    <button class="filter-tab" data-filter="articles">Articles</button>
+    <button class="filter-tab" data-filter="videos">Videos</button>
+    <button class="filter-tab" data-filter="social">Social</button>
+  </div>
+
+  <div style="height:12px"></div>
+
+  <!-- Link cards -->
+  <div class="links-list" id="links-list"></div>
+
+  <!-- Empty state -->
+  <div class="empty-state" id="empty-state">
+    <div class="empty-icon">🌐</div>
+    <div class="empty-title">No links yet</div>
+    <div class="empty-sub">Paste any URL above to<br>save it with a rich preview</div>
+  </div>
+
+</main>
+
+<!-- Bottom nav -->
+<nav class="bottom-nav">
+  <button class="nav-item active" data-view="links">
+    <span class="nav-icon">🔗</span>Links
+  </button>
+  <button class="nav-item" data-view="favorites">
+    <span class="nav-icon">⭐</span>Stars
+  </button>
+  <button class="nav-item" data-view="recent">
+    <span class="nav-icon">🕐</span>Recent
+  </button>
+  <button class="nav-item" data-view="settings">
+    <span class="nav-icon">⚙️</span>More
+  </button>
+</nav>
+
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
