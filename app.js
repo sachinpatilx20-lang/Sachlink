@@ -1,529 +1,525 @@
-// STATE
-let savedUrls = JSON.parse(localStorage.getItem('sachin_urls')) || [];
+/**
+ * Sach.in Premium Links Manager
+ * Optimized for Thumbnail Priority & Confirmation
+ */
+class VidLinkApp {
+    constructor() {
+        this.links = JSON.parse(localStorage.getItem('vidlinks')) || [];
+        this.currentUrl = '';
+        this.currentMetadata = null;
+        this.selectedThumb = '';
+        this.editingId = null;
+        this.currentCrop = 1200;
+        this.bucket = 'sachin_v1_links';
 
-// DOM ELEMENTS
-const addUrlForm = document.getElementById('addUrlForm');
-const urlInput = document.getElementById('urlInput');
-const addBtn = document.getElementById('addBtn');
-const btnText = document.getElementById('btnText');
-const btnLoader = document.getElementById('btnLoader');
-const errorMessage = document.getElementById('errorMessage');
-const linksGrid = document.getElementById('linksGrid');
-const linkCount = document.getElementById('linkCount');
-const clearAllBtn = document.getElementById('clearAllBtn');
-
-// SYNC DOM ELEMENTS
-const showExportBtn = document.getElementById('showExportBtn');
-const showImportBtn = document.getElementById('showImportBtn');
-const exportArea = document.getElementById('exportArea');
-const importArea = document.getElementById('importArea');
-const exportCode = document.getElementById('exportCode');
-const importCodeInput = document.getElementById('importCodeInput');
-const copyCodeBtn = document.getElementById('copyCodeBtn');
-const importSubmitBtn = document.getElementById('importSubmitBtn');
-const importError = document.getElementById('importError');
-
-// INITIAL RENDER & START BACKGROUND POLLERS
-renderLinks();
-backgroundUpdateThumbnails();
-
-// EVENT LISTENERS
-urlInput.addEventListener('paste', () => {
-    // Autosave immediately when user pastes a link
-    setTimeout(() => {
-        if (urlInput.value.trim().length > 0) {
-            addBtn.click();
-        }
-    }, 10);
-});
-
-addUrlForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const url = urlInput.value.trim();
-    if (!url) return;
-
-    // Simple URL validation
-    try {
-        new URL(url);
-    } catch {
-        showError("Please enter a valid URL including http:// or https://");
-        return;
+        this.initElements();
+        this.initEvents();
+        this.render();
     }
 
-    // Check if duplicate
-    if (savedUrls.some(u => u.url === url)) {
-        showError("Link is already saved.");
-        return;
+    initElements() {
+        this.urlInput = document.getElementById('urlInput');
+        this.addBtn = document.getElementById('addBtn');
+        this.linkGrid = document.getElementById('linkGrid');
+        this.loader = document.getElementById('loader');
+        
+        // Modals
+        this.thumbModal = document.getElementById('thumbModal');
+        this.thumbPicker = document.getElementById('thumbPicker');
+        this.thumbStatus = document.getElementById('thumbStatus');
+        this.confirmThumbBtn = document.getElementById('confirmThumb');
+        this.closeModalBtn = document.getElementById('closeModal');
+        this.retryFetchBtn = document.getElementById('retryFetchBtn');
+
+        this.editModal = document.getElementById('editModal');
+        this.editTitle = document.getElementById('editTitle');
+        this.editDesc = document.getElementById('editDesc');
+        this.editThumbPicker = document.getElementById('editThumbPicker');
+        this.saveEditBtn = document.getElementById('saveEditBtn');
+        this.closeEditModalBtn = document.getElementById('closeEditModal');
+        this.genScreenshotBtn = document.getElementById('genScreenshotBtn');
+
+        this.shareModal = document.getElementById('shareModal');
+        this.shareCodeOutput = document.getElementById('shareCodeOutput');
+        this.multiShareBtn = document.getElementById('multiShareBtn');
+        this.closeShareModalBtn = document.getElementById('closeShareModal');
+
+        this.importModal = document.getElementById('importModal');
+        this.importCodeInput = document.getElementById('importCodeInput');
+        this.importBtn = document.getElementById('importBtn');
+        this.confirmImportBtn = document.getElementById('confirmImport');
+        this.closeImportModalBtn = document.getElementById('closeImportModal');
+
+        this.backupBtn = document.getElementById('backupBtn');
+        this.backupModal = document.getElementById('backupModal');
+        this.showExportBtn = document.getElementById('showExportBtn');
+        this.showImportBtn = document.getElementById('showImportBtn');
+        this.exportArea = document.getElementById('exportArea');
+        this.importArea = document.getElementById('importArea');
+        this.exportCodeArea = document.getElementById('exportCode');
+        this.localImportCodeInput = document.getElementById('localImportCodeInput');
+        this.copyCodeBtn = document.getElementById('copyCodeBtn');
+        this.importSubmitBtn = document.getElementById('importSubmitBtn');
+        this.importError = document.getElementById('importError');
+        this.closeBackupModalBtn = document.getElementById('closeBackupModal');
+
+        this.shareStatus = document.getElementById('shareStatus');
+        this.importStatus = document.getElementById('importStatus');
+        this.peer = null;
     }
 
-    setLoading(true);
-
-    try {
-        let title = new URL(url).hostname;
-        let thumbnail = null;
-        let isOriginal = false;
-
-        const originalData = await fetchOriginalThumbnail(url);
-
-        if (originalData.thumbnail) {
-            thumbnail = originalData.thumbnail;
-            if (originalData.title) title = originalData.title;
-            isOriginal = true;
-        }
-
-        // Final Fallback: Always guarantee an image! NO screenshots, NO blanks, NO errors.
-        if (!thumbnail) {
-            let domainName = new URL(url).hostname.replace('www.', '');
-            thumbnail = `https://ui-avatars.com/api/?name=${encodeURIComponent(domainName)}&background=222222&color=ffffff&size=512&font-size=0.33&bold=true`;
-        }
-
-        const newLink = {
-            id: Date.now().toString(),
-            url: url,
-            title: title,
-            thumbnail: thumbnail,
-            domain: new URL(url).hostname,
-            isOriginalImage: isOriginal
-        };
-
-        savedUrls.unshift(newLink);
-        saveData();
-        renderLinks();
-        urlInput.value = '';
-
-        // If we didn't get the original, kick off a background fetch right away
-        if (!isOriginal) {
-            startBackgroundRetry(newLink.id);
-        }
-
-    } catch (err) {
-        showError("Network error fixing system: Unable to resolve link.");
-    } finally {
-        setLoading(false);
-    }
-});
-
-clearAllBtn.addEventListener('click', () => {
-    if (confirm("Are you sure you want to delete all saved links?")) {
-        savedUrls = [];
-        saveData();
-        renderLinks();
-    }
-});
-
-// SYNC TOGGLES & P2P LOGIC
-let currentPeer = null;
-
-showExportBtn.addEventListener('click', () => {
-    importArea.classList.add('hidden');
-    exportArea.classList.toggle('hidden');
-
-    const exportStatus = document.getElementById('exportStatus');
-
-    if (!exportArea.classList.contains('hidden')) {
-        if (currentPeer) currentPeer.destroy();
-
-        // Generate Random 6-digit PIN
-        const pin = Math.floor(100000 + Math.random() * 900000).toString();
-        exportCode.value = pin;
-        exportStatus.textContent = 'Generating Secure Connection...';
-
-        currentPeer = new Peer('sachin-sync-' + pin);
-
-        currentPeer.on('open', (id) => {
-            exportStatus.textContent = 'Ready! Waiting for another device to connect...';
+    initEvents() {
+        this.addBtn.addEventListener('click', () => this.handleAddLink());
+        this.urlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.handleAddLink();
         });
 
-        currentPeer.on('connection', (conn) => {
-            exportStatus.textContent = 'Device connected! Syncing...';
-            conn.on('open', () => {
-                conn.send(JSON.stringify(savedUrls));
-                exportStatus.textContent = 'Sync Complete! You can close this window now.';
-                setTimeout(() => {
-                    exportArea.classList.add('hidden');
-                    currentPeer.destroy();
-                    currentPeer = null;
-                }, 4000);
+        this.closeModalBtn.addEventListener('click', () => this.hideModal(this.thumbModal));
+        this.confirmThumbBtn.addEventListener('click', () => this.confirmThumbnail());
+        this.retryFetchBtn.addEventListener('click', () => this.handleRetryFetch());
+
+        this.saveEditBtn.addEventListener('click', () => this.saveEdit());
+        this.closeEditModalBtn.addEventListener('click', () => this.hideModal(this.editModal));
+        this.genScreenshotBtn.addEventListener('click', () => this.generateScreenshot());
+
+        document.querySelectorAll('.crop-presets button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.crop-presets button').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.currentCrop = parseInt(btn.dataset.crop);
             });
         });
 
-        currentPeer.on('error', (err) => {
-            exportStatus.textContent = 'Connection error. Try clicking generate again.';
-            console.error(err);
-        });
-    } else {
-        if (currentPeer) currentPeer.destroy();
-    }
-});
-
-showImportBtn.addEventListener('click', () => {
-    exportArea.classList.add('hidden');
-    importArea.classList.toggle('hidden');
-    importError.classList.add('hidden');
-    if (currentPeer) currentPeer.destroy();
-});
-
-copyCodeBtn.addEventListener('click', () => {
-    exportCode.select();
-    document.execCommand('copy');
-    const originalText = copyCodeBtn.textContent;
-    copyCodeBtn.textContent = '✔';
-    setTimeout(() => { copyCodeBtn.textContent = originalText; }, 2000);
-});
-
-importSubmitBtn.addEventListener('click', () => {
-    const code = importCodeInput.value.trim();
-    if (!code || code.length !== 6) return;
-
-    if (currentPeer) currentPeer.destroy();
-
-    const importStatus = document.getElementById('importStatus');
-    importStatus.textContent = 'Connecting via secure P2P network...';
-    importError.classList.add('hidden');
-
-    currentPeer = new Peer();
-
-    currentPeer.on('open', () => {
-        importStatus.textContent = 'Connected to network. Requesting data...';
-        const conn = currentPeer.connect('sachin-sync-' + code);
-
-        conn.on('open', () => {
-            importStatus.textContent = 'Receiving data...';
+        this.multiShareBtn.addEventListener('click', () => this.shareCollection());
+        this.closeShareModalBtn.addEventListener('click', () => {
+            this.hideModal(this.shareModal);
+            if (this.peer) this.peer.destroy();
         });
 
-        conn.on('data', (data) => {
-            try {
-                const importedData = JSON.parse(data);
-                if (Array.isArray(importedData)) {
-                    const existingUrls = new Set(savedUrls.map(u => u.url));
-                    const newToAdd = importedData.filter(u => !existingUrls.has(u.url));
-
-                    newToAdd.forEach(link => {
-                        if (link.isOriginalImage === undefined) {
-                            link.isOriginalImage = !link.thumbnail.includes('ui-avatars.com');
-                        }
-                    });
-
-                    savedUrls = [...newToAdd, ...savedUrls];
-                    saveData();
-                    renderLinks();
-
-                    importCodeInput.value = '';
-                    importArea.classList.add('hidden');
-                    alert(`Successfully imported ${newToAdd.length} new links!`);
-
-                    backgroundUpdateThumbnails();
-                    currentPeer.destroy();
-                }
-            } catch (err) {
-                importError.classList.remove('hidden');
-                importStatus.textContent = '';
-            }
+        this.importBtn.addEventListener('click', () => this.showModal(this.importModal));
+        this.closeImportModalBtn.addEventListener('click', () => {
+            this.hideModal(this.importModal);
+            if (this.peer) this.peer.destroy();
         });
+        this.confirmImportBtn.addEventListener('click', () => this.importCollection());
 
-        conn.on('error', () => {
-            importError.classList.remove('hidden');
-            importStatus.textContent = '';
-        });
-    });
-
-    currentPeer.on('error', (err) => {
-        importError.classList.remove('hidden');
-        importStatus.textContent = '';
-        console.error(err);
-    });
-});
-
-
-// HELPER FUNCTIONS
-function saveData() {
-    localStorage.setItem('sachin_urls', JSON.stringify(savedUrls));
-}
-
-function renderLinks() {
-    linkCount.textContent = savedUrls.length;
-    linksGrid.innerHTML = '';
-
-    if (savedUrls.length === 0) {
-        linksGrid.innerHTML = '<p style="color: var(--text-secondary); grid-column: 1 / -1; text-align: center;">No links saved yet. Paste a URL above to get started!</p>';
-        return;
+        this.backupBtn.addEventListener('click', () => this.openBackupModal());
+        this.showExportBtn.addEventListener('click', () => this.switchBackupView('export'));
+        this.showImportBtn.addEventListener('click', () => this.switchBackupView('import'));
+        this.copyCodeBtn.addEventListener('click', () => this.copyBackupCode());
+        this.importSubmitBtn.addEventListener('click', () => this.handleLocalImport());
+        this.closeBackupModalBtn.addEventListener('click', () => this.hideModal(this.backupModal));
     }
 
-    savedUrls.forEach(link => {
-        const card = document.createElement('a');
-        card.href = link.url;
-        card.target = '_blank';
-        card.rel = 'noopener noreferrer';
-        card.className = 'link-card';
-
-        let mediaHtml = '';
-        // If the URL or thumbnail is a direct video file, embed a small muted video player as the thumbnail
-        if (link.thumbnail.match(/\.(mp4|webm|ogg)($|\?)/i) || link.url.match(/\.(mp4|webm|ogg)($|\?)/i)) {
-            const vidUrl = link.thumbnail.match(/\.(mp4|webm|ogg)($|\?)/i) ? link.thumbnail : link.url;
-            mediaHtml = `<video src="${vidUrl}" class="link-thumbnail" muted loop onmouseover="this.play()" onmouseout="this.pause()" preload="metadata" style="object-fit: cover; background-color: var(--card-bg);"></video>`;
-        } else {
-            // Drastically lower bandwidth by physically shrinking heavy Original Images to a fast-loading 400px WEBP thumbnail format
-            let optimizedImg = link.thumbnail;
-            if (!optimizedImg.includes('ui-avatars.com') && !optimizedImg.includes('google.com/s2/favicons') && optimizedImg.startsWith('http')) {
-                optimizedImg = `https://wsrv.nl/?url=${encodeURIComponent(link.thumbnail)}&w=400&output=webp`;
-            }
-
-            // 100% Guaranteed no blank images via proxy / robust onerror handler replacing 403s with generated images
-            mediaHtml = `<img src="${optimizedImg}" class="link-thumbnail" alt="${link.title} thumbnail" loading="lazy" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${link.domain.replace('www.', '')}&background=222222&color=ffffff&size=512&font-size=0.33&bold=true';">`;
-        }
-
-        card.innerHTML = `
-            ${mediaHtml}
-            <div class="link-details">
-                <div class="link-title" title="${link.title}">${link.title}</div>
-                <div class="link-domain">${link.domain}</div>
-            </div>
-            <button class="copy-link-btn" title="Copy Link URL" data-url="${link.url}">&#128279;</button>
-            <button class="delete-link-btn" title="Remove Link" data-id="${link.id}">&times;</button>
-        `;
-
-        linksGrid.appendChild(card);
-    });
-
-    // Attach copy listeners
-    document.querySelectorAll('.copy-link-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const copyUrl = e.target.getAttribute('data-url');
-            navigator.clipboard.writeText(copyUrl).then(() => {
-                const origHtml = e.target.innerHTML;
-                e.target.innerHTML = '&#10003;';
-                setTimeout(() => e.target.innerHTML = origHtml, 1500);
-            }).catch(() => alert("Failed to copy."));
-        });
-    });
-
-    // Attach delete listeners
-    document.querySelectorAll('.delete-link-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const id = e.target.getAttribute('data-id');
-            savedUrls = savedUrls.filter(u => u.id !== id);
-            saveData();
-            renderLinks();
-        });
-    });
-}
-
-function setLoading(isLoading) {
-    if (isLoading) {
-        btnText.classList.add('hidden');
-        btnLoader.classList.remove('hidden');
-        urlInput.disabled = true;
-        addBtn.disabled = true;
-        errorMessage.classList.add('hidden');
-    } else {
-        btnText.classList.remove('hidden');
-        btnLoader.classList.add('hidden');
-        urlInput.disabled = false;
-        addBtn.disabled = false;
-    }
-}
-
-function showError(msg) {
-    errorMessage.textContent = msg;
-    errorMessage.classList.remove('hidden');
-}
-
-// === BACKGROUND FETCH TOOLING ===
-
-function getScraperFriendlyUrl(url) {
-    try {
-        // Many social sites aggressively block thumbnail scraping.
-        // Hot-swapping to dedicated proxy mirrors guarantees permanent raw OpenGraph metadata!
-        const urlObj = new URL(url);
-        const host = urlObj.hostname;
-
-        if (host.includes('twitter.com') || host.includes('x.com')) {
-            urlObj.hostname = 'vxtwitter.com';
-        } else if (host.includes('instagram.com')) {
-            urlObj.hostname = 'ddinstagram.com';
-        } else if (host.includes('tiktok.com')) {
-            urlObj.hostname = 'vxtiktok.com';
-        } else if (host.includes('reddit.com')) {
-            urlObj.hostname = 'rxddit.com';
-        } else if (host.includes('pixiv.net')) {
-            urlObj.hostname = 'phixiv.net';
-        }
-
-        return urlObj.href;
-    } catch {
-        return url;
-    }
-}
-
-async function fetchOriginalThumbnail(url) {
-    let title = null;
-    let thumbnail = null;
-
-    // Method 0: Direct Video Platform Extraction & Direct Media Files
-    const ytMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
-    const vimeoMatch = url.match(/vimeo\.com\/(?:.*#|.*\/videos\/)?([0-9]+)/);
-    
-    if (ytMatch && ytMatch[1]) {
-        thumbnail = `https://img.youtube.com/vi/${ytMatch[1]}/maxresdefault.jpg`;
-    } else if (vimeoMatch && vimeoMatch[1]) {
-        // Vumbnail is a permanent free API providing high res vimeo posters
-        thumbnail = `https://vumbnail.com/${vimeoMatch[1]}.jpg`;
-    } else if (url.match(/\.(mp4|webm|ogg)($|\?)/i)) {
-        // Direct media links: keep the original video URL to be loaded dynamically as a video tag 
-        thumbnail = url;
-    } else if (url.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp)($|\?)/i)) {
-        // Direct image links MUST just use the image directly!
-        thumbnail = url;
-        title = url.split('/').pop();
+    showLoader(show) {
+        if (show) this.loader.classList.remove('hidden');
+        else this.loader.classList.add('hidden');
     }
 
-    // Upgrade to scraper-safe URLs before attempting metadata rips
-    const safeUrl = getScraperFriendlyUrl(url);
+    async handleAddLink() {
+        const url = this.urlInput.value.trim();
+        if (!url) return;
 
-    // Method 1: Microlink
-    try {
-        const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(safeUrl)}`);
-        if (res.ok) {
-            const result = await res.json();
-            if (result.status === "success") {
-                if (!thumbnail && result.data.image?.url) {
-                    thumbnail = result.data.image.url;
-                }
-                if (result.data.title) {
-                    title = result.data.title;
-                }
-            }
-        }
-    } catch (e) {
-        console.warn("Microlink failed:", e);
-    }
+        this.currentUrl = url;
+        this.addBtn.disabled = true;
+        this.showLoader(true);
 
-    // Method 2: AllOrigins Raw HTML Extraction
-    if (!thumbnail) {
         try {
-            const htmlRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(safeUrl)}`);
-            if (htmlRes.ok) {
-                const htmlText = await htmlRes.text();
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(htmlText, "text/html");
-
-                const ogTitle = doc.querySelector('meta[property="og:title"]')?.content;
-                const docTitle = doc.querySelector('title')?.innerText;
-                if (ogTitle || docTitle) title = ogTitle || docTitle;
-
-                // Heavily Prioritize explicit video thumbnail locations over generic images
-                const videoPoster = doc.querySelector('video[poster]')?.getAttribute('poster');
-                const ogVideoThumb = doc.querySelector('meta[property="og:video:image"]')?.content;
-                const ogImage = doc.querySelector('meta[property="og:image"]')?.content;
-                const twImage = doc.querySelector('meta[name="twitter:image"]')?.content;
-                const linkImage = doc.querySelector('link[rel="image_src"]')?.href;
-                
-                // If OpenGraph fails, aggressively search for app icons / high-res favicons generated by the DOM
-                const appleIcon = doc.querySelector('link[rel="apple-touch-icon"]')?.href;
-                const fluidIcon = doc.querySelector('link[rel="fluid-icon"]')?.href;
-                const anyLargeIcon = doc.querySelector('link[rel="icon"][sizes]')?.href;
-
-                let foundImage = videoPoster || ogVideoThumb || twImage || ogImage || linkImage || appleIcon || fluidIcon || anyLargeIcon;
-
-                if (foundImage) {
-                    if (!foundImage.startsWith('http')) {
-                        foundImage = new URL(foundImage, new URL(safeUrl).origin).href;
-                    }
-                    thumbnail = foundImage;
-                }
-            }
-        } catch (e) {
-            console.warn("AllOrigins fallback failed:", e);
+            const metadata = await this.fetchMetadata(url);
+            this.currentMetadata = metadata;
+            
+            // PRIORITY CHANGE: Always show picker if any image exists (even just fallback)
+            // This ensures user can confirm if they want the screenshot or "Try Again"
+            this.showThumbPicker(metadata.images || []);
+        } catch (error) {
+            console.error('Metadata error:', error);
+            const fb = `https://s.wordpress.com/mshots/v1/${encodeURIComponent(url)}?w=1200`;
+            this.showThumbPicker([], fb);
+        } finally {
+            this.addBtn.disabled = false;
+            this.urlInput.value = '';
+            this.showLoader(false);
         }
     }
 
-    // Method 2.5: CorsProxy.io Ultimate DOM Scraper (Pure Client-Side proxy that bypasses AllOrigins limits)
-    if (!thumbnail) {
+    async handleRetryFetch() {
+        this.hideModal(this.thumbModal);
+        this.urlInput.value = this.currentUrl;
+        this.handleAddLink();
+    }
+
+    async fetchMetadata(url) {
+        let results = {
+            title: url,
+            description: 'Fetching metadata...',
+            images: [],
+            fallback: `https://s.wordpress.com/mshots/v1/${encodeURIComponent(url)}?w=1200`,
+            url: url,
+            isScreenshot: false
+        };
+
+        // Try NoEmbed
         try {
-            const corsRes = await fetch(`https://corsproxy.io/?${encodeURIComponent(safeUrl)}`);
-            if (corsRes.ok) {
-                const htmlText = await corsRes.text();
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(htmlText, "text/html");
-
-                const ogImage = doc.querySelector('meta[property="og:image"]')?.content;
-                const twImage = doc.querySelector('meta[name="twitter:image"]')?.content;
-                const appleIcon = doc.querySelector('link[rel="apple-touch-icon"]')?.href;
-
-                let foundImage = ogImage || twImage || appleIcon;
-                if (foundImage) {
-                    if (!foundImage.startsWith('http')) {
-                        foundImage = new URL(foundImage, new URL(safeUrl).origin).href;
-                    }
-                    thumbnail = foundImage;
-                }
+            const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`);
+            const data = await res.json();
+            if (data.title) {
+                results.title = data.title;
+                results.description = `Shared by ${data.author_name || 'user'}`;
+                if (data.thumbnail_url) results.images.push(data.thumbnail_url);
+                return results;
             }
         } catch (e) {}
-    }
 
-    // Method 3: Google Favicon (Permanent image fallback before resorting to initials)
-    if (!thumbnail) {
+        // Try Microlink
         try {
-            const domain = new URL(url).hostname;
-            // Guarantees a physical image response unconditionally
-            thumbnail = `https://www.google.com/s2/favicons?domain=${domain}&sz=256`;
-        } catch (e) { }
+            const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
+            const data = await res.json();
+            if (data.status === 'success') {
+                const m = data.data;
+                results.title = m.title || results.title;
+                results.description = m.description || results.description;
+                if (m.image?.url) results.images.push(m.image.url);
+                if (m.logo?.url) results.images.push(m.logo.url);
+                if (results.images.length > 0) return results;
+            }
+        } catch (e) {}
+
+        // Final proxy fallback
+        try {
+            const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+            const data = await res.json();
+            const doc = new DOMParser().parseFromString(data.contents, 'text/html');
+            const getM = (s) => doc.querySelector(`meta[property="${s}"], meta[name="${s}"]`)?.getAttribute('content');
+            results.title = getM('og:title') || doc.title || results.title;
+            results.description = getM('og:description') || getM('description') || 'No description.';
+            const og = getM('og:image');
+            if (og) results.images.push(og);
+        } catch (e) {}
+
+        if (results.images.length === 0) {
+            results.images = [results.fallback];
+            results.isScreenshot = true;
+        }
+
+        return results;
     }
 
-    return { title, thumbnail };
-}
+    showThumbPicker(images, overrideFB) {
+        this.thumbPicker.innerHTML = '';
+        const allImages = overrideFB ? [overrideFB] : images;
+        const isScreenshotOnly = this.currentMetadata?.isScreenshot || (allImages.length === 1 && allImages[0].includes('mshots'));
 
-async function backgroundUpdateThumbnails() {
-    // Migration: ensure older links have the flag evaluated
-    let needsSave = false;
-    savedUrls.forEach(link => {
-        if (link.isOriginalImage === undefined) {
-            link.isOriginalImage = !link.thumbnail.includes('ui-avatars.com');
-            needsSave = true;
+        if (isScreenshotOnly) {
+            this.thumbStatus.innerText = "OG Image not found. Use this screenshot or try again?";
+            this.thumbStatus.style.color = "#d9534f"; // Alert color
+        } else {
+            this.thumbStatus.innerText = "Select your preferred thumbnail:";
+            this.thumbStatus.style.color = "#666";
         }
-    });
-    if (needsSave) saveData();
 
-    // Loop through missing items and begin retry protocol
-    for (let link of savedUrls) {
-        if (!link.isOriginalImage) {
-            startBackgroundRetry(link.id);
+        allImages.forEach((img, index) => {
+            const div = document.createElement('div');
+            div.className = 'thumb-option' + (index === 0 ? ' selected' : '');
+            div.innerHTML = `<img src="${img}">`;
+            div.onclick = () => {
+                this.thumbPicker.querySelectorAll('.thumb-option').forEach(o => o.classList.remove('selected'));
+                div.classList.add('selected');
+                this.selectedThumb = img;
+            };
+            this.thumbPicker.appendChild(div);
+        });
+        this.selectedThumb = allImages[0];
+        this.showModal(this.thumbModal);
+    }
+
+    confirmThumbnail() {
+        this.saveLink(this.selectedThumb, this.currentMetadata.title, this.currentMetadata.description);
+        this.hideModal(this.thumbModal);
+    }
+
+    saveLink(thumb, title, desc) {
+        const link = { id: 'l_' + Date.now(), url: this.currentUrl, thumb, title, desc };
+        this.links.unshift(link);
+        this.updateStorage();
+        this.render();
+    }
+
+    editLink(id) {
+        const link = this.links.find(l => l.id === id);
+        if (!link) return;
+        this.editingId = id;
+        this.editTitle.value = link.title;
+        this.editDesc.value = link.desc;
+        this.selectedThumb = link.thumb;
+        this.currentUrl = link.url;
+        this.renderEditThumbPicker([link.thumb]);
+        this.fetchMetadata(link.url).then(m => this.renderEditThumbPicker(m.images || []));
+        this.showModal(this.editModal);
+    }
+
+    renderEditThumbPicker(images) {
+        const unique = [...new Set([...(images || []), this.selectedThumb])];
+        this.editThumbPicker.innerHTML = unique.map(img => `
+            <div class="thumb-option ${img === this.selectedThumb ? 'selected' : ''}" onclick="window.vidLinkApp.selectEditThumb('${img}')">
+                <img src="${img}">
+            </div>
+        `).join('');
+    }
+
+    selectEditThumb(img) {
+        this.selectedThumb = img;
+        this.editThumbPicker.querySelectorAll('.thumb-option').forEach(o => {
+            o.classList.remove('selected');
+            const imgEl = o.querySelector('img');
+            if (imgEl && (imgEl.src === img || imgEl.getAttribute('src') === img)) o.classList.add('selected');
+        });
+    }
+
+    generateScreenshot() {
+        const ss = `https://s.wordpress.com/mshots/v1/${encodeURIComponent(this.currentUrl)}?w=${this.currentCrop}`;
+        this.selectEditThumb(ss);
+        const div = document.createElement('div');
+        div.className = 'thumb-option selected';
+        div.innerHTML = `<img src="${ss}">`;
+        div.onclick = () => this.selectEditThumb(ss);
+        this.editThumbPicker.prepend(div);
+    }
+
+    saveEdit() {
+        const link = this.links.find(l => l.id === this.editingId);
+        if (link) {
+            link.title = this.editTitle.value;
+            link.desc = this.editDesc.value;
+            link.thumb = this.selectedThumb;
+            this.updateStorage();
+            this.render();
         }
+        this.hideModal(this.editModal);
+    }
+
+    removeLink(id) {
+        if (confirm('Delete this link?')) {
+            this.links = this.links.filter(l => l.id !== id);
+            this.updateStorage();
+            this.render();
+        }
+    }
+
+    updateStorage() { localStorage.setItem('vidlinks', JSON.stringify(this.links)); }
+    showModal(m) { if (m) m.classList.remove('hidden'); }
+    hideModal(m) { if (m) m.classList.add('hidden'); }
+
+    copyLink(url) {
+        navigator.clipboard.writeText(url).then(() => alert('Copied to clipboard!'));
+    }
+
+    async shareCollection() {
+        if (this.links.length === 0) return alert('No links to share.');
+        
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const peerId = `sachin_v1_sync_${code}`;
+        
+        this.showLoader(true);
+        this.shareStatus.innerText = "Initializing P2P...";
+        this.shareStatus.style.color = "#666";
+
+        if (this.peer) this.peer.destroy();
+        this.peer = new Peer(peerId);
+
+        this.peer.on('open', (id) => {
+            this.showLoader(false);
+            this.shareCodeOutput.textContent = code;
+            this.showModal(this.shareModal);
+            this.shareStatus.innerText = "Waiting for connection...";
+        });
+
+        this.peer.on('connection', (conn) => {
+            this.shareStatus.innerText = "Connected! Sending data...";
+            this.shareStatus.style.color = "#4CAF50";
+            conn.on('open', () => {
+                conn.send(this.links);
+                setTimeout(() => {
+                    this.shareStatus.innerText = "Data sent successfully!";
+                }, 1000);
+            });
+        });
+
+        this.peer.on('error', (err) => {
+            this.showLoader(false);
+            if (err.type === 'unavailable-id') {
+                // If code taken, try once more automatically
+                this.shareCollection();
+            } else {
+                console.error('Peer Error:', err);
+                alert('P2P Error: ' + err.type);
+            }
+        });
+    }
+
+    async importCollection() {
+        const code = this.importCodeInput.value.trim();
+        if (code.length !== 6) return alert('Enter 6-digit code.');
+        
+        const targetId = `sachin_v1_sync_${code}`;
+        this.showLoader(true);
+        this.importStatus.innerText = "Connecting to peer...";
+        this.importStatus.style.color = "#666";
+
+        if (this.peer) this.peer.destroy();
+        this.peer = new Peer(); // Random ID for importer
+
+        this.peer.on('open', () => {
+            const conn = this.peer.connect(targetId);
+            
+            // Timeout if cannot connect in 10s
+            const timeout = setTimeout(() => {
+                this.showLoader(false);
+                this.importStatus.innerText = "Connection timed out. Is the sender online?";
+                this.importStatus.style.color = "#d9534f";
+                this.peer.destroy();
+            }, 10000);
+
+            conn.on('open', () => {
+                clearTimeout(timeout);
+                this.importStatus.innerText = "Connected! Receiving data...";
+            });
+
+            conn.on('data', (data) => {
+                if (Array.isArray(data)) {
+                    const oldLen = this.links.length;
+                    this.links = [...data, ...this.links];
+                    const seen = new Set();
+                    this.links = this.links.filter(l => seen.has(l.url) ? false : seen.add(l.url));
+                    const added = this.links.length - oldLen;
+                    
+                    this.updateStorage();
+                    this.render();
+                    
+                    this.importStatus.innerText = `Success! ${added} links added.`;
+                    this.importStatus.style.color = "#4CAF50";
+                    
+                    setTimeout(() => {
+                        this.showLoader(false);
+                        this.hideModal(this.importModal);
+                        this.peer.destroy();
+                    }, 1500);
+                }
+            });
+
+            conn.on('error', (err) => {
+                clearTimeout(timeout);
+                this.showLoader(false);
+                this.importStatus.innerText = "Connection error.";
+                this.importStatus.style.color = "#d9534f";
+            });
+        });
+
+        this.peer.on('error', (err) => {
+            this.showLoader(false);
+            console.error('Peer Error:', err);
+            this.importStatus.innerText = "P2P Error: " + err.type;
+            this.importStatus.style.color = "#d9534f";
+        });
+    }
+
+    openBackupModal() {
+        this.switchBackupView('export');
+        this.showModal(this.backupModal);
+    }
+
+    handleLocalExport() {
+        this.exportCodeArea.value = JSON.stringify(this.links, null, 2);
+    }
+
+    copyBackupCode() {
+        if (!this.exportCodeArea.value) return;
+        navigator.clipboard.writeText(this.exportCodeArea.value).then(() => {
+            const originalText = this.copyCodeBtn.innerText;
+            this.copyCodeBtn.innerText = 'Copied!';
+            this.copyCodeBtn.classList.add('active');
+            setTimeout(() => {
+                this.copyCodeBtn.innerText = originalText;
+                this.copyCodeBtn.classList.remove('active');
+            }, 2000);
+        });
+    }
+
+    handleLocalImport() {
+        try {
+            const code = this.localImportCodeInput.value.trim();
+            if (!code) {
+                this.importError.innerText = "Please paste your backup code first.";
+                this.importError.classList.remove('hidden');
+                return;
+            }
+            const data = JSON.parse(code);
+            if (Array.isArray(data) && data.length > 0) {
+                // Basic validation: check if items have url property
+                if (!data[0].url) throw new Error('Invalid format');
+                
+                const oldLen = this.links.length;
+                this.links = [...data, ...this.links];
+                
+                // Remove duplicates based on URL
+                const seen = new Set();
+                this.links = this.links.filter(l => seen.has(l.url) ? false : seen.add(l.url));
+                
+                const added = this.links.length - oldLen;
+                
+                this.updateStorage();
+                this.render();
+                this.importError.classList.add('hidden');
+                this.localImportCodeInput.value = '';
+                this.hideModal(this.backupModal);
+                alert(`Backup restored! ${added} new links added.`);
+            } else {
+                throw new Error('Not an array or empty');
+            }
+        } catch (e) {
+            this.importError.innerText = "Error: Invalid JSON format. Make sure it's a valid Sach.in backup array.";
+            this.importError.classList.remove('hidden');
+        }
+    }
+
+    switchBackupView(view) {
+        this.importError.classList.add('hidden');
+        if (view === 'export') {
+            this.exportArea.classList.remove('hidden');
+            this.importArea.classList.add('hidden');
+            this.showExportBtn.classList.add('active');
+            this.showImportBtn.classList.remove('active');
+            this.handleLocalExport();
+        } else {
+            this.exportArea.classList.add('hidden');
+            this.importArea.classList.remove('hidden');
+            this.showExportBtn.classList.remove('active');
+            this.showImportBtn.classList.add('active');
+            this.localImportCodeInput.focus();
+        }
+    }
+
+    render() {
+        if (!this.linkGrid) return;
+        if (this.links.length === 0) {
+            this.linkGrid.innerHTML = '<div class="empty-state"><p>No links found. Add your first link above!</p></div>';
+            return;
+        }
+        this.linkGrid.innerHTML = this.links.map(l => `
+            <div class="card">
+                <img src="${l.thumb}" class="card-img" onerror="this.src='https://via.placeholder.com/400?text=Wait+for+Screenshot'">
+                <div class="card-content">
+                    <h3>${l.title}</h3>
+                    <p style="display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${l.desc}</p>
+                    <div class="card-actions">
+                        <button class="btn secondary" onclick="window.open('${l.url}', '_blank')">Open</button>
+                        <button class="btn secondary" onclick="window.vidLinkApp.copyLink('${l.url}')">Copy</button>
+                        <button class="btn secondary" onclick="window.vidLinkApp.editLink('${l.id}')">Edit</button>
+                        <button class="btn secondary" onclick="window.vidLinkApp.removeLink('${l.id}')">Remove</button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
     }
 }
 
-async function startBackgroundRetry(linkId) {
-    // Delays config: ramp up, then settle at 2 mins forever
-    const delays = [5000, 15000, 45000];
-    let attempt = 0;
-
-    while (true) {
-        let currentDelay = attempt < delays.length ? delays[attempt] : 120000;
-        await new Promise(resolve => setTimeout(resolve, currentDelay));
-        attempt++;
-
-        // Grab fresh copy inside loop as it might be deleted by user
-        const linkIndex = savedUrls.findIndex(u => u.id === linkId);
-        if (linkIndex === -1) return; // Deleted by user during interval
-        const currentLink = savedUrls[linkIndex];
-
-        if (currentLink.isOriginalImage) return; // Already updated
-
-        const data = await fetchOriginalThumbnail(currentLink.url);
-
-        if (data.thumbnail && !data.thumbnail.includes('ui-avatars.com') && !data.thumbnail.includes('google.com/s2/favicons')) {
-            // We found the real image! Update it!
-            savedUrls[linkIndex].thumbnail = data.thumbnail;
-            if (data.title) savedUrls[linkIndex].title = data.title;
-            savedUrls[linkIndex].isOriginalImage = true;
-
-            saveData();
-            renderLinks();
-            break; // Stop retrying for this link!
-        }
-    }
-}
+window.vidLinkApp = new VidLinkApp();

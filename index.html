@@ -1,68 +1,161 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sach.in - URL Manager</title>
-    <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>Sach.in - Premium Links Manager</title>
+    <meta name="description"
+        content="Save, manage, and share video links with ease. Features OG metadata extraction and 6-digit code sharing.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
-<body>
-    <div class="app-container">
-        <header>
-            <h1>Sach.in</h1>
-            <p>Your minimalist URL manager.</p>
-        </header>
 
-        <section class="add-url-section">
-            <form id="addUrlForm">
-                <input type="url" id="urlInput" placeholder="Paste URL here (e.g., https://example.com)" required>
-                <button type="submit" id="addBtn">
-                    <span id="btnText">Save Link</span>
-                    <span id="btnLoader" class="hidden">Parsing...</span>
-                </button>
-            </form>
-            <p id="errorMessage" class="error-msg hidden"></p>
-        </section>
-
-        <section class="sync-section">
-            <div class="sync-actions">
-                <button id="showExportBtn" class="secondary-btn">Generate Sync Code</button>
-                <button id="showImportBtn" class="secondary-btn">Import Sync Code</button>
-            </div>
-            
-            <div id="exportArea" class="sync-area hidden">
-                <p>Your 6-Digit Sync PIN:</p>
-                <div style="display: flex; gap: 10px; align-items: center;">
-                    <input type="text" id="exportCode" readonly style="font-size: 1.5rem; font-weight: bold; letter-spacing: 5px; text-align: center; background: var(--bg-color);">
-                    <button id="copyCodeBtn" style="padding: 12px; font-size: 1.2rem;" title="Copy Code">📋</button>
-                </div>
-                <p style="color: var(--text-secondary); font-size: 0.85rem;">Keep this page open. Enter this PIN on another device to sync.</p>
-                <p id="exportStatus" style="font-size: 0.9rem; margin-top: 5px; color: var(--text-secondary);">Waiting for connection...</p>
-            </div>
-
-            <div id="importArea" class="sync-area hidden">
-                <p>Enter 6-Digit PIN from your other device:</p>
-                <input type="text" id="importCodeInput" placeholder="123456" maxlength="6" style="font-size: 1.5rem; font-weight: bold; letter-spacing: 5px; text-align: center; text-transform: uppercase;">
-                <button id="importSubmitBtn">Sync Data</button>
-                <p id="importStatus" style="font-size: 0.9rem; margin-top: 5px; color: var(--text-secondary);"></p>
-                <p id="importError" class="error-msg hidden">Invalid PIN or device offline.</p>
-            </div>
-        </section>
-
-        <section class="urls-section">
-            <div class="controls">
-                <h2>Saved Links (<span id="linkCount">0</span>)</h2>
-                <button id="clearAllBtn" class="danger-btn">Clear All</button>
-            </div>
-            <div id="linksGrid" class="links-grid">
-                <!-- Links will be dynamically injected here -->
-            </div>
-        </section>
+<body class="light-theme">
+    <div id="loader" class="loader-overlay hidden">
+        <div class="spinner"></div>
+        <p>Processing...</p>
     </div>
 
-    <!-- P2P Syncing via PeerJS for short 6-digit Codes -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <div class="app-container">
+        <header class="glass">
+            <div class="logo">
+                <h1>Sach.in</h1>
+                <span>Links Manager</span>
+            </div>
+            <div class="header-actions">
+                <button id="multiShareBtn" class="btn secondary">Cloud Sync</button>
+                <button id="importBtn" class="btn secondary">Sync Import</button>
+                <button id="backupBtn" class="btn secondary">Backup/Restore</button>
+            </div>
+        </header>
+
+        <section class="add-section glass">
+            <div class="input-group">
+                <input type="text" id="urlInput" placeholder="Paste link here..." autocomplete="off">
+                <button id="addBtn" class="btn primary">Add Link</button>
+            </div>
+        </section>
+
+        <main id="linkGrid" class="link-grid">
+            <!-- Cards will be injected here -->
+            <div class="empty-state">
+                <p>No links saved yet. Paste a link to get started!</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Thumbnail Picker Modal (for adding) -->
+    <div id="thumbModal" class="modal-overlay hidden">
+        <div class="modal-content glass">
+            <h2>Select Thumbnail</h2>
+            <p id="thumbStatus" class="small-status"></p>
+            <div id="thumbPicker" class="thumb-picker">
+                <!-- Thumbnails injected here -->
+            </div>
+            <div class="modal-actions">
+                <button id="retryFetchBtn" class="btn secondary">Try Again</button>
+                <button id="closeModal" class="btn secondary">Cancel</button>
+                <button id="confirmThumb" class="btn primary">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Link Modal -->
+    <div id="editModal" class="modal-overlay hidden">
+        <div class="modal-content glass">
+            <h2>Edit Link Details</h2>
+            <div class="edit-fields">
+                <div class="field">
+                    <label>Title</label>
+                    <input type="text" id="editTitle" placeholder="Enter title...">
+                </div>
+                <div class="field">
+                    <label>Description</label>
+                    <textarea id="editDesc" placeholder="Enter description..."></textarea>
+                </div>
+                <div class="thumbnail-section">
+                    <label>Thumbnail</label>
+                    <div id="editThumbPicker" class="thumb-picker">
+                        <!-- Thumbnails injected here -->
+                    </div>
+                    <div class="screenshot-tools">
+                        <h3>Crop Screenshot</h3>
+                        <div class="crop-presets">
+                            <button class="btn tiny active" data-crop="600">Full</button>
+                            <button class="btn tiny" data-crop="400">Wide</button>
+                            <button class="btn tiny" data-crop="300">Square</button>
+                        </div>
+                        <button id="genScreenshotBtn" class="btn secondary small">Generate New Screenshot</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="closeEditModal" class="btn secondary">Cancel</button>
+                <button id="saveEditBtn" class="btn primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div id="shareModal" class="modal-overlay hidden">
+        <div class="modal-content glass text-center">
+            <h2>Share Collection (P2P)</h2>
+            <p>Your unique 6-digit code is:</p>
+            <div id="shareCodeOutput" class="share-code">000000</div>
+            <p class="small"><b>Important:</b> Keep this window open while your friend imports your collection. This is a direct P2P connection.</p>
+            <div id="shareStatus" class="status-msg">Waiting for connection...</div>
+            <div class="modal-actions">
+                <button id="closeShareModal" class="btn primary">Done / Stop Sharing</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div id="importModal" class="modal-overlay hidden">
+        <div class="modal-content glass">
+            <h2>Import Collection (P2P)</h2>
+            <p>Enter the 6-digit code from the sender.</p>
+            <input type="text" id="importCodeInput" maxlength="6" placeholder="E.g. 123456">
+            <div id="importStatus" class="status-msg"></div>
+            <div class="modal-actions">
+                <button id="closeImportModal" class="btn secondary">Cancel</button>
+                <button id="confirmImport" class="btn primary">Connect & Import</button>
+            </div>
+        </div>
+    </div>
+    <!-- Backup/Restore Modal -->
+    <div id="backupModal" class="modal-overlay hidden">
+        <div class="modal-content glass">
+            <h2>Backup & Restore</h2>
+            <div class="tabs">
+                <button id="showExportBtn" class="btn mini active">Export</button>
+                <button id="showImportBtn" class="btn mini">Import</button>
+            </div>
+
+            <div id="exportArea" class="backup-section">
+                <p class="small">Copy this code to backup your links:</p>
+                <textarea id="exportCode" readonly placeholder="Your backup code will appear here..."></textarea>
+                <button id="copyCodeBtn" class="btn primary full-width">Copy Backup Code</button>
+            </div>
+
+            <div id="importArea" class="backup-section hidden">
+                <p class="small">Paste your backup code here:</p>
+                <textarea id="localImportCodeInput" placeholder='[{"id":"l_1...}]'></textarea>
+                <p id="importError" class="error-text hidden">Invalid backup code format.</p>
+                <button id="importSubmitBtn" class="btn primary full-width">Restore Links</button>
+            </div>
+
+            <div class="modal-actions">
+                <button id="closeBackupModal" class="btn secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
+
 </html>
