@@ -11,9 +11,11 @@ class VidLinkApp {
         this.editingId = null;
         this.currentCrop = 1200;
         this.bucket = 'sachin_v1_links';
+        this.layout = localStorage.getItem('sachin_layout') || 'grid';
 
         this.initElements();
         this.initEvents();
+        this.setLayout(this.layout);
         this.render();
     }
 
@@ -22,6 +24,9 @@ class VidLinkApp {
         this.addBtn = document.getElementById('addBtn');
         this.linkGrid = document.getElementById('linkGrid');
         this.loader = document.getElementById('loader');
+        
+        this.gridViewBtn = document.getElementById('gridViewBtn');
+        this.listViewBtn = document.getElementById('listViewBtn');
         
         // Modals
         this.thumbModal = document.getElementById('thumbModal');
@@ -74,7 +79,19 @@ class VidLinkApp {
             if (e.key === 'Enter') this.handleAddLink();
         });
 
-        this.closeModalBtn.addEventListener('click', () => this.hideModal(this.thumbModal));
+        if (this.gridViewBtn && this.listViewBtn) {
+            this.gridViewBtn.addEventListener('click', () => this.setLayout('grid'));
+            this.listViewBtn.addEventListener('click', () => this.setLayout('list'));
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.closeAllModals();
+        });
+
+        this.closeModalBtn.addEventListener('click', () => {
+            this.hideModal(this.thumbModal);
+            if (this.links.length === 0) this.render();
+        });
         this.confirmThumbBtn.addEventListener('click', () => this.confirmThumbnail());
         this.retryFetchBtn.addEventListener('click', () => this.handleRetryFetch());
 
@@ -116,20 +133,52 @@ class VidLinkApp {
         else this.loader.classList.add('hidden');
     }
 
+    setLayout(layout) {
+        if (!this.gridViewBtn || !this.listViewBtn) return;
+        if (layout === 'grid') {
+            this.gridViewBtn.classList.add('active');
+            this.listViewBtn.classList.remove('active');
+            this.linkGrid.classList.remove('list-view');
+        } else {
+            this.listViewBtn.classList.add('active');
+            this.gridViewBtn.classList.remove('active');
+            this.linkGrid.classList.add('list-view');
+        }
+        localStorage.setItem('sachin_layout', layout);
+    }
+
+    closeAllModals() {
+        [this.thumbModal, this.editModal, this.shareModal, this.importModal, this.backupModal].forEach(m => {
+            if (m && !m.classList.contains('hidden')) {
+                m.classList.add('hidden');
+                if (m === this.thumbModal && this.links.length === 0) this.render();
+            }
+        });
+    }
+
     async handleAddLink() {
         const url = this.urlInput.value.trim();
         if (!url) return;
 
         this.currentUrl = url;
         this.addBtn.disabled = true;
-        this.showLoader(true);
+
+        const skeletonHtml = `
+            <div class="skeleton-card" id="tempSkeleton">
+                <div class="skeleton-img"></div>
+                <div class="skeleton-content">
+                    <div class="skeleton-line"></div>
+                    <div class="skeleton-line short"></div>
+                    <div class="skeleton-line tiny" style="margin-top: auto;"></div>
+                </div>
+            </div>
+        `;
+        if (this.linkGrid.querySelector('.empty-state')) this.linkGrid.innerHTML = '';
+        this.linkGrid.insertAdjacentHTML('afterbegin', skeletonHtml);
 
         try {
             const metadata = await this.fetchMetadata(url);
             this.currentMetadata = metadata;
-            
-            // PRIORITY CHANGE: Always show picker if any image exists (even just fallback)
-            // This ensures user can confirm if they want the screenshot or "Try Again"
             this.showThumbPicker(metadata.images || []);
         } catch (error) {
             console.error('Metadata error:', error);
@@ -138,7 +187,11 @@ class VidLinkApp {
         } finally {
             this.addBtn.disabled = false;
             this.urlInput.value = '';
-            this.showLoader(false);
+            const skel = document.getElementById('tempSkeleton');
+            if (skel) skel.remove();
+            if (this.links.length === 0 && document.getElementById('thumbModal').classList.contains('hidden')) {
+                this.render();
+            }
         }
     }
 
@@ -158,43 +211,80 @@ class VidLinkApp {
             isScreenshot: false
         };
 
-        // Try NoEmbed
-        try {
-            const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`);
-            const data = await res.json();
-            if (data.title) {
-                results.title = data.title;
-                results.description = `Shared by ${data.author_name || 'user'}`;
-                if (data.thumbnail_url) results.images.push(data.thumbnail_url);
-                return results;
-            }
-        } catch (e) {}
+        const resolveUrl = (relative) => {
+            try { return new URL(relative, url).href; } catch (e) { return relative; }
+        };
 
-        // Try Microlink
-        try {
-            const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
-            const data = await res.json();
-            if (data.status === 'success') {
-                const m = data.data;
-                results.title = m.title || results.title;
-                results.description = m.description || results.description;
-                if (m.image?.url) results.images.push(m.image.url);
-                if (m.logo?.url) results.images.push(m.logo.url);
-                if (results.images.length > 0) return results;
-            }
-        } catch (e) {}
+        // Try YouTube OEmbed fast path
+        if (url.includes('youtube.com/watch') || url.includes('youtu.be/')) {
+            try {
+                let ytUrl = url;
+                if (url.includes('youtu.be/')) {
+                    const id = url.split('youtu.be/')[1].split('?')[0];
+                    ytUrl = `https://www.youtube.com/watch?v=${id}`;
+                }
+                const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(ytUrl)}&format=json`);
+                const data = await res.json();
+                if (data.title) {
+                    results.title = data.title;
+                    results.description = `YouTube Video by ${data.author_name}`;
+                    if (data.thumbnail_url) results.images.push(data.thumbnail_url);
+                    return results;
+                }
+            } catch (e) {}
+        }
 
-        // Final proxy fallback
-        try {
-            const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-            const data = await res.json();
-            const doc = new DOMParser().parseFromString(data.contents, 'text/html');
-            const getM = (s) => doc.querySelector(`meta[property="${s}"], meta[name="${s}"]`)?.getAttribute('content');
-            results.title = getM('og:title') || doc.title || results.title;
-            results.description = getM('og:description') || getM('description') || 'No description.';
-            const og = getM('og:image');
-            if (og) results.images.push(og);
-        } catch (e) {}
+        // Run other fetchers in parallel to get max images faster
+        await Promise.allSettled([
+            fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.title && results.title === url) results.title = data.title;
+                    if (data.author_name && results.description === 'Fetching metadata...') results.description = `Shared by ${data.author_name || 'user'}`;
+                    if (data.thumbnail_url) results.images.push(data.thumbnail_url);
+                }),
+            fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        const m = data.data;
+                        if (m.title && results.title === url) results.title = m.title;
+                        if (m.description && results.description === 'Fetching metadata...') results.description = m.description;
+                        if (m.image?.url) results.images.push(m.image.url);
+                        if (m.logo?.url) results.images.push(m.logo.url);
+                    }
+                }),
+            fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`)
+                .then(res => res.json())
+                .then(data => {
+                    const doc = new DOMParser().parseFromString(data.contents, 'text/html');
+                    const getM = (s) => doc.querySelector(`meta[property="${s}"], meta[name="${s}"]`)?.getAttribute('content');
+                    
+                    const title = getM('og:title') || getM('twitter:title') || doc.querySelector('[itemprop="name"]')?.getAttribute('content') || doc.title;
+                    if (title && results.title === url) results.title = title;
+                    
+                    const desc = getM('og:description') || getM('twitter:description') || doc.querySelector('[itemprop="description"]')?.getAttribute('content') || getM('description');
+                    if (desc && results.description === 'Fetching metadata...') results.description = desc || 'No description.';
+                    
+                    const og = getM('og:image') || getM('twitter:image') || doc.querySelector('[itemprop="image"]')?.getAttribute('content');
+                    if (og) results.images.push(resolveUrl(og));
+
+                    // Extract more images (icons and img tags)
+                    ['apple-touch-icon', 'icon', 'shortcut icon'].forEach(rel => {
+                        const href = doc.querySelector(`link[rel="${rel}"]`)?.getAttribute('href');
+                        if (href) results.images.push(resolveUrl(href));
+                    });
+
+                    Array.from(doc.querySelectorAll('img'))
+                        .map(img => img.getAttribute('src'))
+                        .filter(Boolean)
+                        .slice(0, 15)
+                        .forEach(src => results.images.push(resolveUrl(src)));
+                })
+        ]);
+
+        // Remove duplicates and empty
+        results.images = [...new Set(results.images.filter(Boolean))];
 
         if (results.images.length === 0) {
             results.images = [results.fallback];
@@ -298,23 +388,37 @@ class VidLinkApp {
     }
 
     removeLink(id) {
-        if (confirm('Delete this link?')) {
-            this.links = this.links.filter(l => l.id !== id);
-            this.updateStorage();
-            this.render();
-        }
+        this.links = this.links.filter(l => l.id !== id);
+        this.updateStorage();
+        this.render();
+        this.showToast('Link removed from vault', 'success');
     }
 
     updateStorage() { localStorage.setItem('vidlinks', JSON.stringify(this.links)); }
     showModal(m) { if (m) m.classList.remove('hidden'); }
     hideModal(m) { if (m) m.classList.add('hidden'); }
 
+    showToast(message, type = 'success') {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.innerText = message;
+        container.appendChild(toast);
+        setTimeout(() => {
+            if (toast.parentElement) {
+                toast.classList.add('fade-out');
+                setTimeout(() => toast.remove(), 300);
+            }
+        }, 3000);
+    }
+
     copyLink(url) {
-        navigator.clipboard.writeText(url).then(() => alert('Copied to clipboard!'));
+        navigator.clipboard.writeText(url).then(() => this.showToast('Copied to clipboard!'));
     }
 
     async shareCollection() {
-        if (this.links.length === 0) return alert('No links to share.');
+        if (this.links.length === 0) return this.showToast('No links to share.', 'error');
         
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         const peerId = `sachin_v1_sync_${code}`;
@@ -351,14 +455,14 @@ class VidLinkApp {
                 this.shareCollection();
             } else {
                 console.error('Peer Error:', err);
-                alert('P2P Error: ' + err.type);
+                this.showToast('P2P Error: ' + err.type, 'error');
             }
         });
     }
 
     async importCollection() {
         const code = this.importCodeInput.value.trim();
-        if (code.length !== 6) return alert('Enter 6-digit code.');
+        if (code.length !== 6) return this.showToast('Enter a valid 6-digit code.', 'error');
         
         const targetId = `sachin_v1_sync_${code}`;
         this.showLoader(true);
@@ -471,7 +575,7 @@ class VidLinkApp {
                 this.importError.classList.add('hidden');
                 this.localImportCodeInput.value = '';
                 this.hideModal(this.backupModal);
-                alert(`Backup restored! ${added} new links added.`);
+                this.showToast(`Backup restored! ${added} new links added.`);
             } else {
                 throw new Error('Not an array or empty');
             }
@@ -501,20 +605,36 @@ class VidLinkApp {
     render() {
         if (!this.linkGrid) return;
         if (this.links.length === 0) {
-            this.linkGrid.innerHTML = '<div class="empty-state"><p>No links found. Add your first link above!</p></div>';
+            this.linkGrid.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">🌐</div>
+                    <div class="empty-title">Your vault is empty</div>
+                    <div class="empty-sub">Paste any URL above to save it with a rich preview.</div>
+                </div>`;
             return;
         }
         this.linkGrid.innerHTML = this.links.map(l => `
             <div class="card">
-                <img src="${l.thumb}" class="card-img" onerror="this.src='https://via.placeholder.com/400?text=Wait+for+Screenshot'">
+                <div class="card-img-wrapper">
+                    <img src="${l.thumb}" class="card-img" onerror="this.src='https://via.placeholder.com/400?text=Wait+for+Screenshot'">
+                </div>
                 <div class="card-content">
                     <h3>${l.title}</h3>
-                    <p style="display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${l.desc}</p>
+                    <p>${l.desc}</p>
                     <div class="card-actions">
-                        <button class="btn secondary" onclick="window.open('${l.url}', '_blank')">Open</button>
-                        <button class="btn secondary" onclick="window.vidLinkApp.copyLink('${l.url}')">Copy</button>
-                        <button class="btn secondary" onclick="window.vidLinkApp.editLink('${l.id}')">Edit</button>
-                        <button class="btn secondary" onclick="window.vidLinkApp.removeLink('${l.id}')">Remove</button>
+                        <button class="btn open-btn" onclick="window.open('${l.url}', '_blank')" title="Open">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" style="margin-right: 4px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                            Open
+                        </button>
+                        <button class="btn default-btn" onclick="window.vidLinkApp.copyLink('${l.url}')" title="Copy">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        </button>
+                        <button class="btn default-btn" onclick="window.vidLinkApp.editLink('${l.id}')" title="Edit">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        </button>
+                        <button class="btn default-btn delete-btn" onclick="window.vidLinkApp.removeLink('${l.id}')" title="Remove">
+                            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
                     </div>
                 </div>
             </div>
