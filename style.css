@@ -13,9 +13,29 @@
     --danger: #dd0000;
     --success: #00aa00;
 
-    --radius-sm: 4px;
+    --radius-sm: 50px;
+    --radius-md: 100px;
+    --radius-lg: 100px;
     --font-heading: 'Inter', sans-serif;
     --font-body: 'Inter', sans-serif;
+    
+    --transition-speed: 0.2s;
+}
+
+/* Dark Theme Variables */
+body.dark-theme {
+    --bg-main: #0a0a0a;
+    --surface: #121212;
+    --border-color: #333333;
+    --text-primary: #ffffff;
+    --text-secondary: #aaaaaa;
+    --text-muted: #666666;
+    
+    --accent: #ffffff;
+    --accent-hover: #dddddd;
+    
+    --danger: #ff4444;
+    --success: #44ff44;
 }
 
 /* Base Reset */
@@ -32,6 +52,7 @@ body {
     font-family: var(--font-body);
     min-height: 100vh;
     line-height: 1.5;
+    transition: background-color var(--transition-speed), color var(--transition-speed);
 }
 
 /* Layout */
@@ -99,13 +120,14 @@ body {
 }
 
 .input-group {
-    display: flex;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: 1fr 240px 140px;
+    gap: 12px;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 800px) {
     .input-group {
-        flex-direction: column;
+        grid-template-columns: 1fr;
     }
 }
 
@@ -113,7 +135,7 @@ input, textarea {
     flex: 1;
     background: var(--surface);
     border: 2px solid var(--border-color);
-    border-radius: var(--radius-sm);
+    border-radius: 30px;
     padding: 12px 14px;
     color: var(--text-primary);
     font-family: var(--font-body);
@@ -134,12 +156,12 @@ input::placeholder, textarea::placeholder {
 .btn {
     border: 2px solid var(--border-color);
     border-radius: var(--radius-sm);
-    padding: 10px 18px;
+    padding: 10px 24px;
     font-family: var(--font-heading);
-    font-weight: 600;
-    font-size: 0.95rem;
+    font-weight: 700;
+    font-size: 0.9rem;
     cursor: pointer;
-    transition: transform 0.1s, box-shadow 0.1s, background 0.1s, color 0.1s;
+    transition: all 0.2s;
     background: var(--surface);
     color: var(--text-primary);
     display: inline-flex;
@@ -186,12 +208,18 @@ input::placeholder, textarea::placeholder {
 .view-controls {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 12px;
     margin-bottom: 1.5rem;
 }
 
 .icon-btn {
-    padding: 6px 10px;
+    padding: 8px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .icon-btn.active {
@@ -199,10 +227,91 @@ input::placeholder, textarea::placeholder {
     color: var(--surface);
 }
 
+/* Controls Row */
+.controls-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.search-box {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 2px 14px;
+    gap: 10px;
+}
+
+.search-box input {
+    border: none;
+    padding: 10px 0;
+    width: 100%;
+}
+
+.search-box input:focus {
+    outline: none;
+}
+
+.small-select {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    height: 38px;
+}
+
+@media (max-width: 650px) {
+    .controls-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+/* Category Bar */
+.category-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 2rem;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scrollbar-width: none; /* Firefox */
+}
+
+.category-bar::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+}
+
+.cat-pill {
+    background: var(--surface);
+    border: 2px solid var(--border-color);
+    border-radius: 20px;
+    padding: 6px 16px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+    color: var(--text-primary);
+}
+
+.cat-pill:hover {
+    background: #f0f0f0;
+}
+
+.cat-pill.active {
+    background: var(--text-primary);
+    color: var(--surface);
+}
+
+body.dark-theme .cat-pill:hover {
+    background: #222;
+}
+
 /* Grid & Cards */
 .link-grid {
-    column-width: 260px;
-    column-gap: 1.5rem;
+    column-width: 320px;
+    column-gap: 2rem;
+    margin-top: 1rem;
 }
 
 .link-grid.list-view {
@@ -214,19 +323,95 @@ input::placeholder, textarea::placeholder {
 .card {
     background: var(--surface);
     border: 2px solid var(--border-color);
-    border-radius: var(--radius-sm);
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    transition: transform 0.2s ease;
+    cursor: pointer;
+    display: inline-block;
+    width: 100%;
+    break-inside: avoid;
+    margin-bottom: 2rem;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+.card-img-wrapper {
+    width: 100%;
+    overflow: hidden;
+    z-index: 1;
+}
+
+.card-img {
+    width: 100%;
+    height: auto;
+    display: block;
+    transition: filter 0.3s ease;
+}
+
+
+
+.card-content {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 1rem;
     display: flex;
     flex-direction: column;
-    box-shadow: 4px 4px 0px 0px var(--border-color);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-    animation: fadeUp 0.3s ease-out backwards;
-    break-inside: avoid;
-    margin-bottom: 1.5rem;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.7);
+    color: #ffffff;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.25s ease;
+    z-index: 5;
+    backdrop-filter: blur(8px);
+}
+
+.card:hover .card-content {
+    opacity: 1;
+    visibility: visible;
+}
+
+.card:hover .card-img {
+    filter: brightness(0.4) blur(3px);
+}
+
+body.dark-theme .card-content {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.card-content h3, .card-content p {
+    color: #ffffff !important;
+}
+
+.card-actor-tag {
+    background: #ffffff;
+    color: #000000;
 }
 
 @keyframes fadeUp {
     from { opacity: 0; transform: translateY(15px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes highlightFlash {
+    0% { background: var(--bg-main); }
+    50% { background: var(--highlight-color, rgba(0, 0, 0, 0.05)); }
+    100% { background: var(--bg-main); }
+}
+
+body.dark-theme {
+    --highlight-color: rgba(255, 255, 255, 0.1);
+}
+
+.highlight-flash {
+    animation: highlightFlash 1s ease-in-out infinite;
+    border-color: var(--accent) !important;
 }
 
 .card:hover {
@@ -240,9 +425,28 @@ input::placeholder, textarea::placeholder {
     margin-bottom: 0;
 }
 
-.card-img-wrapper {
-    position: relative;
-    width: 100%;
+.card-actor-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.card-actor-tag {
+    display: inline-block;
+    font-size: 0.55rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: var(--text-primary);
+    color: var(--surface);
+    padding: 2px 8px;
+    border-radius: 10px;
+    letter-spacing: 0.2px;
+}
+
+body.dark-theme .card-actor-tag {
+    background: #333;
+    color: #eee;
 }
 
 .link-grid.list-view .card-img-wrapper {
@@ -253,12 +457,10 @@ input::placeholder, textarea::placeholder {
 }
 
 .card-img {
-    width: 100%;
-    height: auto;
-    object-fit: cover;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
     display: block;
-    background: #eaeaea;
-    border-bottom: 2px solid var(--border-color);
 }
 
 .link-grid.list-view .card-img {
@@ -266,16 +468,16 @@ input::placeholder, textarea::placeholder {
 }
 
 .card-content {
-    padding: 1.25rem;
+    padding: 0.8rem 1.2rem;
     display: flex;
     flex-direction: column;
     flex: 1;
 }
 
 .card-content h3 {
-    font-size: 1.1rem;
+    font-size: 0.95rem;
     font-weight: 700;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.4rem;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     line-clamp: 2;
@@ -284,12 +486,13 @@ input::placeholder, textarea::placeholder {
 }
 
 .card-content p {
-    font-size: 0.85rem;
+    font-size: 0.75rem;
+    line-height: 1.3;
     color: var(--text-secondary);
-    margin-bottom: 1.25rem;
+    margin-bottom: 0.75rem;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
     -webkit-box-orient: vertical;
     overflow: hidden;
     flex: 1;
@@ -297,8 +500,8 @@ input::placeholder, textarea::placeholder {
 
 .card-actions {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 8px;
     margin-top: auto;
 }
 
@@ -308,10 +511,15 @@ input::placeholder, textarea::placeholder {
     gap: 8px;
 }
 
-.card-actions .btn {
-    padding: 6px;
-    font-size: 0.8rem;
-    box-shadow: 2px 2px 0px 0px var(--border-color);
+.card-content .btn {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border-color: #ffffff !important;
+    box-shadow: none !important;
+}
+
+.card-content .btn:hover {
+    background: #eeeeee !important;
 }
 
 .card-actions .btn:active {
@@ -417,7 +625,7 @@ input::placeholder, textarea::placeholder {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(var(--bg-main-rgb, 255, 255, 255), 0.9);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -426,6 +634,9 @@ input::placeholder, textarea::placeholder {
     opacity: 1;
     transition: opacity 0.2s ease;
 }
+
+body.light-theme .modal-overlay { background: rgba(255, 255, 255, 0.9); }
+body.dark-theme .modal-overlay { background: rgba(0, 0, 0, 0.9); }
 
 .modal-overlay.hidden {
     opacity: 0;
@@ -517,14 +728,60 @@ input::placeholder, textarea::placeholder {
     gap: 0.5rem;
 }
 
-.field label {
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    font-weight: 700;
-}
-
 textarea {
     min-height: 80px;
+}
+
+/* Actor Form UI */
+.actor-input-wrapper {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    align-items: center;
+}
+
+.actor-input-wrapper input {
+    flex: 1;
+}
+
+@media (max-width: 600px) {
+    .actor-input-wrapper {
+        flex: 1;
+    }
+}
+
+.form-actor-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.form-actor-tag {
+    display: flex;
+    align-items: center;
+    background: #f0f0f0;
+    border: 1px solid var(--border-color);
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.form-actor-tag button {
+    background: none;
+    border: none;
+    color: var(--danger);
+    margin-left: 6px;
+    cursor: pointer;
+    font-weight: 800;
+    font-size: 1rem;
+    padding: 0 2px;
+    line-height: 1;
+}
+
+body.dark-theme .form-actor-tag {
+    background: #222;
 }
 
 .crop-presets {

@@ -10,12 +10,13 @@ class VidLinkApp {
         this.selectedThumb = '';
         this.editingId = null;
         this.currentCrop = 1200;
-        this.bucket = 'sachin_v1_links';
-        this.layout = localStorage.getItem('sachin_layout') || 'grid';
+        this.theme = localStorage.getItem('sachin_theme') || 'light';
+        this.activeActor = 'all';
+        this.tempActors = []; 
 
         this.initElements();
         this.initEvents();
-        this.setLayout(this.layout);
+        this.setTheme(this.theme);
         this.render();
     }
 
@@ -55,18 +56,16 @@ class VidLinkApp {
         this.confirmImportBtn = document.getElementById('confirmImport');
         this.closeImportModalBtn = document.getElementById('closeImportModal');
 
-        this.backupBtn = document.getElementById('backupBtn');
-        this.backupModal = document.getElementById('backupModal');
-        this.showExportBtn = document.getElementById('showExportBtn');
-        this.showImportBtn = document.getElementById('showImportBtn');
-        this.exportArea = document.getElementById('exportArea');
-        this.importArea = document.getElementById('importArea');
-        this.exportCodeArea = document.getElementById('exportCode');
-        this.localImportCodeInput = document.getElementById('localImportCodeInput');
-        this.copyCodeBtn = document.getElementById('copyCodeBtn');
-        this.importSubmitBtn = document.getElementById('importSubmitBtn');
-        this.importError = document.getElementById('importError');
-        this.closeBackupModalBtn = document.getElementById('closeBackupModal');
+        this.themeToggle = document.getElementById('themeToggle');
+        this.themeIcon = document.getElementById('themeIcon');
+
+        this.actorFilter = document.getElementById('actorFilter');
+        this.addActorsInput = document.getElementById('addActorsInput');
+        this.addActorBtn = document.getElementById('addActorBtn');
+        this.addActorsList = document.getElementById('addActorsList');
+        this.editActorsInput = document.getElementById('editActors');
+        this.editActorBtn = document.getElementById('editActorBtn');
+        this.editActorsList = document.getElementById('editActorsList');
 
         this.shareStatus = document.getElementById('shareStatus');
         this.importStatus = document.getElementById('importStatus');
@@ -120,12 +119,34 @@ class VidLinkApp {
         });
         this.confirmImportBtn.addEventListener('click', () => this.importCollection());
 
-        this.backupBtn.addEventListener('click', () => this.openBackupModal());
-        this.showExportBtn.addEventListener('click', () => this.switchBackupView('export'));
-        this.showImportBtn.addEventListener('click', () => this.switchBackupView('import'));
-        this.copyCodeBtn.addEventListener('click', () => this.copyBackupCode());
-        this.importSubmitBtn.addEventListener('click', () => this.handleLocalImport());
-        this.closeBackupModalBtn.addEventListener('click', () => this.hideModal(this.backupModal));
+        this.themeToggle.addEventListener('click', () => this.toggleTheme());
+
+        this.actorFilter.addEventListener('click', (e) => {
+            const pill = e.target.closest('.cat-pill');
+            if (pill) {
+                this.activeActor = pill.dataset.actor;
+                this.actorFilter.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                this.render();
+            }
+        });
+
+        this.addActorBtn.addEventListener('click', () => this.handleAddFormActor('add'));
+        this.editActorBtn.addEventListener('click', () => this.handleAddFormActor('edit'));
+
+        this.addActorsInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.handleAddFormActor('add');
+            }
+        });
+
+        this.editActorsInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.handleAddFormActor('edit');
+            }
+        });
     }
 
     showLoader(show) {
@@ -147,8 +168,24 @@ class VidLinkApp {
         localStorage.setItem('sachin_layout', layout);
     }
 
+    setTheme(theme) {
+        this.theme = theme;
+        document.body.className = theme === 'dark' ? 'dark-theme' : 'light-theme';
+        localStorage.setItem('sachin_theme', theme);
+        
+        if (this.themeIcon) {
+            this.themeIcon.innerHTML = theme === 'dark' 
+                ? '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>'
+                : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
+        }
+    }
+
+    toggleTheme() {
+        this.setTheme(this.theme === 'light' ? 'dark' : 'light');
+    }
+
     closeAllModals() {
-        [this.thumbModal, this.editModal, this.shareModal, this.importModal, this.backupModal].forEach(m => {
+        [this.thumbModal, this.editModal, this.shareModal, this.importModal].forEach(m => {
             if (m && !m.classList.contains('hidden')) {
                 m.classList.add('hidden');
                 if (m === this.thumbModal && this.links.length === 0) this.render();
@@ -177,6 +214,28 @@ class VidLinkApp {
         this.linkGrid.insertAdjacentHTML('afterbegin', skeletonHtml);
 
         try {
+            // Check for duplicates
+            const existingLink = this.links.find(l => l.url === url);
+            if (existingLink) {
+                this.showToast('Link already in vault!', 'error');
+                this.urlInput.value = '';
+                this.addActorsInput.value = '';
+                this.tempActors = [];
+                this.renderFormActors('add');
+                const skel = document.getElementById('tempSkeleton');
+                if (skel) skel.remove();
+                this.addBtn.disabled = false;
+                
+                // Optional: Scroll to existing link
+                const card = document.querySelector(`[data-id="${existingLink.id}"]`);
+                if (card) {
+                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    card.classList.add('highlight-flash');
+                    setTimeout(() => card.classList.remove('highlight-flash'), 2000);
+                }
+                return;
+            }
+
             const metadata = await this.fetchMetadata(url);
             this.currentMetadata = metadata;
             this.showThumbPicker(metadata.images || []);
@@ -187,6 +246,9 @@ class VidLinkApp {
         } finally {
             this.addBtn.disabled = false;
             this.urlInput.value = '';
+            this.addActorsInput.value = '';
+            this.tempActors = [];
+            this.renderFormActors('add');
             const skel = document.getElementById('tempSkeleton');
             if (skel) skel.remove();
             if (this.links.length === 0 && document.getElementById('thumbModal').classList.contains('hidden')) {
@@ -278,10 +340,18 @@ class VidLinkApp {
                     Array.from(doc.querySelectorAll('img'))
                         .map(img => img.getAttribute('src'))
                         .filter(Boolean)
+                        .filter(src => src.startsWith('http') || src.startsWith('/'))
                         .slice(0, 15)
                         .forEach(src => results.images.push(resolveUrl(src)));
                 })
-        ]);
+        ]).catch(err => console.warn('Parallel fetch error:', err));
+
+        // If no title found, use hostname
+        if (results.title === url) {
+            try {
+                results.title = new URL(url).hostname;
+            } catch(e) {}
+        }
 
         // Remove duplicates and empty
         results.images = [...new Set(results.images.filter(Boolean))];
@@ -323,12 +393,14 @@ class VidLinkApp {
     }
 
     confirmThumbnail() {
-        this.saveLink(this.selectedThumb, this.currentMetadata.title, this.currentMetadata.description);
+        // Auto-add any text left in the input
+        this.handleAddFormActor('add');
+        this.saveLink(this.selectedThumb, this.currentMetadata.title, this.currentMetadata.description, [...this.tempActors]);
         this.hideModal(this.thumbModal);
     }
 
-    saveLink(thumb, title, desc) {
-        const link = { id: 'l_' + Date.now(), url: this.currentUrl, thumb, title, desc };
+    saveLink(thumb, title, desc, actors) {
+        const link = { id: 'l_' + Date.now(), url: this.currentUrl, thumb, title, desc, actors: actors || [], date: Date.now() };
         this.links.unshift(link);
         this.updateStorage();
         this.render();
@@ -340,6 +412,9 @@ class VidLinkApp {
         this.editingId = id;
         this.editTitle.value = link.title;
         this.editDesc.value = link.desc;
+        this.tempActors = Array.isArray(link.actors) ? [...link.actors] : (link.category ? [link.category] : []);
+        this.renderFormActors('edit');
+        this.editActorsInput.value = '';
         this.selectedThumb = link.thumb;
         this.currentUrl = link.url;
         this.renderEditThumbPicker([link.thumb]);
@@ -349,11 +424,14 @@ class VidLinkApp {
 
     renderEditThumbPicker(images) {
         const unique = [...new Set([...(images || []), this.selectedThumb])];
-        this.editThumbPicker.innerHTML = unique.map(img => `
-            <div class="thumb-option ${img === this.selectedThumb ? 'selected' : ''}" onclick="window.vidLinkApp.selectEditThumb('${img}')">
-                <img src="${img}">
-            </div>
-        `).join('');
+        this.editThumbPicker.innerHTML = unique.map(img => {
+            const escapedImg = img.replace(/'/g, "\\'");
+            return `
+                <div class="thumb-option ${img === this.selectedThumb ? 'selected' : ''}" onclick="window.vidLinkApp.selectEditThumb('${escapedImg}')">
+                    <img src="${img}">
+                </div>
+            `;
+        }).join('');
     }
 
     selectEditThumb(img) {
@@ -378,13 +456,17 @@ class VidLinkApp {
     saveEdit() {
         const link = this.links.find(l => l.id === this.editingId);
         if (link) {
+            // Auto-add any text left in the input
+            this.handleAddFormActor('edit');
             link.title = this.editTitle.value;
             link.desc = this.editDesc.value;
+            link.actors = [...this.tempActors];
             link.thumb = this.selectedThumb;
             this.updateStorage();
             this.render();
         }
         this.hideModal(this.editModal);
+        this.tempActors = [];
     }
 
     removeLink(id) {
@@ -451,8 +533,13 @@ class VidLinkApp {
         this.peer.on('error', (err) => {
             this.showLoader(false);
             if (err.type === 'unavailable-id') {
-                // If code taken, try once more automatically
-                this.shareCollection();
+                // Limit retries
+                this.retryCount = (this.retryCount || 0) + 1;
+                if (this.retryCount < 3) {
+                    this.shareCollection();
+                } else {
+                    this.showToast('Unable to generate unique share code. Try again later.', 'error');
+                }
             } else {
                 console.error('Peer Error:', err);
                 this.showToast('P2P Error: ' + err.type, 'error');
@@ -526,101 +613,48 @@ class VidLinkApp {
         });
     }
 
-    openBackupModal() {
-        this.switchBackupView('export');
-        this.showModal(this.backupModal);
-    }
 
-    handleLocalExport() {
-        this.exportCodeArea.value = JSON.stringify(this.links, null, 2);
-    }
-
-    copyBackupCode() {
-        if (!this.exportCodeArea.value) return;
-        navigator.clipboard.writeText(this.exportCodeArea.value).then(() => {
-            const originalText = this.copyCodeBtn.innerText;
-            this.copyCodeBtn.innerText = 'Copied!';
-            this.copyCodeBtn.classList.add('active');
-            setTimeout(() => {
-                this.copyCodeBtn.innerText = originalText;
-                this.copyCodeBtn.classList.remove('active');
-            }, 2000);
-        });
-    }
-
-    handleLocalImport() {
-        try {
-            const code = this.localImportCodeInput.value.trim();
-            if (!code) {
-                this.importError.innerText = "Please paste your backup code first.";
-                this.importError.classList.remove('hidden');
-                return;
-            }
-            const data = JSON.parse(code);
-            if (Array.isArray(data) && data.length > 0) {
-                // Basic validation: check if items have url property
-                if (!data[0].url) throw new Error('Invalid format');
-                
-                const oldLen = this.links.length;
-                this.links = [...data, ...this.links];
-                
-                // Remove duplicates based on URL
-                const seen = new Set();
-                this.links = this.links.filter(l => seen.has(l.url) ? false : seen.add(l.url));
-                
-                const added = this.links.length - oldLen;
-                
-                this.updateStorage();
-                this.render();
-                this.importError.classList.add('hidden');
-                this.localImportCodeInput.value = '';
-                this.hideModal(this.backupModal);
-                this.showToast(`Backup restored! ${added} new links added.`);
-            } else {
-                throw new Error('Not an array or empty');
-            }
-        } catch (e) {
-            this.importError.innerText = "Error: Invalid JSON format. Make sure it's a valid Sach.in backup array.";
-            this.importError.classList.remove('hidden');
-        }
-    }
-
-    switchBackupView(view) {
-        this.importError.classList.add('hidden');
-        if (view === 'export') {
-            this.exportArea.classList.remove('hidden');
-            this.importArea.classList.add('hidden');
-            this.showExportBtn.classList.add('active');
-            this.showImportBtn.classList.remove('active');
-            this.handleLocalExport();
-        } else {
-            this.exportArea.classList.add('hidden');
-            this.importArea.classList.remove('hidden');
-            this.showExportBtn.classList.remove('active');
-            this.showImportBtn.classList.add('active');
-            this.localImportCodeInput.focus();
-        }
-    }
 
     render() {
         if (!this.linkGrid) return;
-        if (this.links.length === 0) {
+        
+        // Update Actor Bar
+        this.updateActorBar();
+
+        let filtered = [...this.links];
+
+        // Actor filter
+        if (this.activeActor !== 'all') {
+            filtered = filtered.filter(l => Array.isArray(l.actors) && l.actors.includes(this.activeActor));
+        }
+
+        // Sorting (Always Newest First)
+        filtered.sort((a, b) => (b.date || 0) - (a.date || 0));
+
+        if (filtered.length === 0) {
+            const isFiltering = this.activeActor !== 'all';
             this.linkGrid.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-icon">🌐</div>
-                    <div class="empty-title">Your vault is empty</div>
-                    <div class="empty-sub">Paste any URL above to save it with a rich preview.</div>
+                    <div class="empty-icon">${isFiltering ? '🔍' : '🌐'}</div>
+                    <div class="empty-title">${isFiltering ? 'No results found' : 'Your vault is empty'}</div>
+                    <div class="empty-sub">${isFiltering ? 'Try adjusting your filters.' : 'Paste any URL above to save it with a rich preview.'}</div>
                 </div>`;
             return;
         }
-        this.linkGrid.innerHTML = this.links.map(l => `
-            <div class="card">
+
+        this.linkGrid.innerHTML = filtered.map(l => {
+            const actors = Array.isArray(l.actors) ? l.actors : (l.category ? [l.category] : []);
+            return `
+            <div class="card" data-id="${l.id}">
                 <div class="card-img-wrapper">
-                    <img src="${l.thumb}" class="card-img" onerror="this.src='https://via.placeholder.com/400?text=Wait+for+Screenshot'">
+                    <img src="${l.thumb}" class="card-img" loading="lazy" onerror="this.src='https://via.placeholder.com/400?text=Image+Unavailable'">
                 </div>
                 <div class="card-content">
+                    <div class="card-actor-tags">
+                        ${actors.map(a => `<span class="card-actor-tag">${a}</span>`).join('')}
+                    </div>
                     <h3>${l.title}</h3>
-                    <p>${l.desc}</p>
+                    <p class="card-desc">${l.desc}</p>
                     <div class="card-actions">
                         <button class="btn open-btn" onclick="window.open('${l.url}', '_blank')" title="Open">
                             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" style="margin-right: 4px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
@@ -637,6 +671,51 @@ class VidLinkApp {
                         </button>
                     </div>
                 </div>
+            </div>
+        `;}).join('');
+    }
+
+    updateActorBar() {
+        const allActors = this.links.flatMap(l => Array.isArray(l.actors) ? l.actors : (l.category ? [l.category] : []));
+        const uniqueActors = [...new Set(allActors)].filter(Boolean).sort();
+        
+        const html = [
+            `<button class="cat-pill ${this.activeActor === 'all' ? 'active' : ''}" data-actor="all">All Actors</button>`,
+            ...uniqueActors.map(actor => `<button class="cat-pill ${this.activeActor === actor ? 'active' : ''}" data-actor="${actor}">${actor}</button>`)
+        ].join('');
+        
+        if (this.actorFilter.innerHTML !== html) {
+            this.actorFilter.innerHTML = html;
+        }
+    }
+
+    handleAddFormActor(formType) {
+        const input = formType === 'add' ? this.addActorsInput : this.editActorsInput;
+        const name = input.value.trim();
+        if (name) {
+            // Support comma-separated batch add even in the input
+            const names = name.split(',').map(n => n.trim()).filter(Boolean);
+            names.forEach(n => {
+                if (!this.tempActors.includes(n)) {
+                    this.tempActors.push(n);
+                }
+            });
+            input.value = '';
+            this.renderFormActors(formType);
+        }
+    }
+
+    removeFormActor(formType, index) {
+        this.tempActors.splice(index, 1);
+        this.renderFormActors(formType);
+    }
+
+    renderFormActors(formType) {
+        const list = formType === 'add' ? this.addActorsList : this.editActorsList;
+        list.innerHTML = this.tempActors.map((a, i) => `
+            <div class="form-actor-tag">
+                ${a}
+                <button type="button" onclick="window.vidLinkApp.removeFormActor('${formType}', ${i})">×</button>
             </div>
         `).join('');
     }
